@@ -62,3 +62,6 @@ develop-eggs
 # Builds
 .sv?
 /vendor/
+
+package-lock.json
+css/*.min.css
