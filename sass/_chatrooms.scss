@@ -125,7 +125,7 @@
                 .chat-area {
                     display: flex;
                     flex-direction: column;
-                    word-wrap: break-word; 
+                    word-wrap: break-word;
                     .new-msgs-indicator {
                         background-color: $chatroom-head-color;
                     }
@@ -140,7 +140,7 @@
                     overflow-x: hidden;
                     overflow-y: hidden;
                     vertical-align: top;
-                    background-color: white;
+                    background-color: $lightest-green-riot;
                     border-left: 1px solid $text-color;
                     border-bottom-right-radius: $chatbox-border-radius;
                     padding: 0.5em;
@@ -153,7 +153,7 @@
                             cursor: pointer;
                         }
                         .occupants-heading {
-                            font-family: $heading-font; 
+                            font-family: $heading-font;
                             padding: 0.3em 0;
                         }
                     }
@@ -400,7 +400,7 @@
                     ul {
                         &.occupant-list {
                             li {
-                                font-size: $font-size-small;
+                                font-size: $font-size-large;
                             }
                         }
                     }

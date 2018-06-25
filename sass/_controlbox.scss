@@ -170,7 +170,7 @@
             .brand-heading {
                 text-align: center;
             }
-            
+
             .brand-name {
                 font-size: 120%;
             }
@@ -226,7 +226,7 @@
             margin: 1em 0 0 0;
 
             .controlbox-heading {
-                font-family: $heading-font; 
+                font-family: $heading-font;
                 margin: 0 0 0.5em 0;
                 text-transform: uppercase;
             }
@@ -281,12 +281,15 @@
         .controlbox-panes {
             height: 100%;
             overflow-y: auto;
-            background-color: white;
+            background-color: $green-riot;
         }
 
         .controlbox-pane {
-            background-color: white;
-            border: 0;
+
+            margin-left: 50px;
+            background-color: $lightest-green-riot;
+            height: 100%;
+
             font-size: $font-size;
             left: 0;
             text-align: left;
@@ -367,7 +370,7 @@
                 font-size: 14px;
             }
 
-            .chatbox { 
+            .chatbox {
                 .box-flyout {
                     margin-left: 15px; // Counteracts Bootstrap margins, but
                                        // not clear why needed...

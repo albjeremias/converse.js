@@ -14,6 +14,10 @@ $blue: #387592;
 $dark-blue: #206485;
 $darkest-blue: #114C68;
 
+$lightest-black: #999999;
+$light-black: #333333;
+$black: #000000;
+
 $lightest-red: #FFB9A7;
 $light-red: #FF977C;
 $red: #E77051;
@@ -40,6 +44,9 @@ $green: #3AA569;
 $dark-green: #1E9652;
 $darkest-green: #0E763B;
 
+$lightest-green-riot: #EAF5F0;
+$green-riot: #D3EFE1;
+
 $link-color: $light-blue !default;
 $dark-link-color: $dark-blue !default;
 $global-background-color: $light-blue !default;
@@ -65,8 +72,8 @@ $roster-height: 194px !default;
 
 $flyout-padding: 1.2em;
 
-$chat-head-color: $green !default;
-$chat-head-text-color: white !default;
+$chat-head-color: $green-riot !default;
+$chat-head-text-color: black !default;
 $chat-head-inverse-text-color: white !default;
 
 $input-focus-color: #1A9707 !default;
@@ -114,7 +121,7 @@ $heading-font: 'Century Gothic', futura, 'URW Gothic L', Verdana, sans-serif !de
 
 $chatroom-color-dark: $darkest-red !default;
 $chatroom-color-light: $light-red !default;
-$chatroom-head-color: $red !default;
+$chatroom-head-color: $green-riot !default;
 $chatroom-message-them-color: $green !default;
 $chatroom-width: 400px !default;
 
