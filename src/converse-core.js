@@ -67,6 +67,7 @@
 
     // Core plugins are whitelisted automatically
     _converse.core_plugins = [
+        'converse-autocomplete',
         'converse-bookmarks',
         'converse-caps',
         'converse-chatboxes',
@@ -98,8 +99,29 @@
         'converse-vcard'
     ];
 
+    // Setting wait to 59 instead of 60 to avoid timing conflicts with the
+    // webserver, which is often also set to 60 and might therefore sometimes
+    // return a 504 error page instead of passing through to the BOSH proxy.
+    const BOSH_WAIT = 59;
+
     // Make converse pluggable
     pluggable.enable(_converse, '_converse', 'pluggable');
+
+    _converse.keycodes = {
+        TAB: 9,
+        ENTER: 13,
+        SHIFT: 16,
+        CTRL: 17,
+        ALT: 18,
+        ESCAPE: 27,
+        UP_ARROW: 38,
+        DOWN_ARROW: 40,
+        FORWARD_SLASH: 47,
+        AT: 50,
+        META: 91,
+        META_RIGHT: 93
+    };
+
 
     // Module-level constants
     _converse.STATUS_WEIGHTS = {
@@ -128,7 +150,7 @@
     _converse.OPENED = 'opened';
     _converse.PREBIND = "prebind";
 
-    _converse.IQ_TIMEOUT = 30000;
+    _converse.IQ_TIMEOUT = 20000;
 
     _converse.CONNECTION_STATUS = {
         0: 'ERROR',
@@ -227,6 +249,8 @@
         }
         if (message instanceof Error) {
             message = message.stack;
+        } else if (_.isElement(message)) {
+            message = message.outerHTML;
         }
         const prefix = style ? '%c' : '';
         const logger = _.assign({
@@ -292,6 +316,10 @@
             promise.resolve();
         }
     };
+
+    _converse.isSingleton = function () {
+        return _.includes(['mobile', 'fullscreen', 'embedded'], _converse.view_mode);
+    }
 
     _converse.router = new Backbone.Router();
 
@@ -734,8 +762,8 @@
             this.connection.addHandler((iq) => {
                 if (iq.querySelectorAll('error').length > 0) {
                     _converse.log(
-                        'An error occured while trying to enable message carbons.',
-                        Strophe.LogLevel.ERROR);
+                        'An error occurred while trying to enable message carbons.',
+                        Strophe.LogLevel.WARN);
                 } else {
                     this.session.save({'carbons_enabled': true});
                     _converse.log('Message carbons have been enabled.');
@@ -801,7 +829,7 @@
             defaults () {
                 return {
                     "jid": _converse.bare_jid,
-                    "status":  _converse.default_state,
+                    "status":  _converse.default_state
                 }
             },
 
@@ -1019,7 +1047,7 @@
                 if (!this.connection.reconnecting) {
                     this.connection.reset();
                 }
-                this.connection.connect(this.jid.toLowerCase(), null, this.onConnectStatusChanged);
+                this.connection.connect(this.jid.toLowerCase(), null, this.onConnectStatusChanged, BOSH_WAIT);
             } else if (this.authentication === _converse.LOGIN) {
                 const password = _.isNil(credentials) ? (_converse.connection.pass || this.password) : credentials.password;
                 if (!password) {
@@ -1040,7 +1068,7 @@
                 if (!this.connection.reconnecting) {
                     this.connection.reset();
                 }
-                this.connection.connect(this.jid, password, this.onConnectStatusChanged);
+                this.connection.connect(this.jid, password, this.onConnectStatusChanged, BOSH_WAIT);
             }
         };
 

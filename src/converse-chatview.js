@@ -9,7 +9,6 @@
             "bootstrap",
             "emojione",
             "xss",
-            "templates/action.html",
             "templates/chatbox.html",
             "templates/chatbox_head.html",
             "templates/chatbox_message_form.html",
@@ -33,7 +32,6 @@
             bootstrap,
             emojione,
             xss,
-            tpl_action,
             tpl_chatbox,
             tpl_chatbox_head,
             tpl_chatbox_message_form,
@@ -52,10 +50,6 @@
     "use strict";
     const { $msg, Backbone, Promise, Strophe, _, b64_sha1, f, sizzle, moment } = converse.env;
     const u = converse.env.utils;
-    const KEY = {
-        ENTER: 13,
-        FORWARD_SLASH: 47
-    };
 
     converse.plugins.add('converse-chatview', {
         /* Plugin dependencies are other plugins which might be
@@ -237,7 +231,7 @@
 
             _converse.UserDetailsModal = _converse.BootstrapModal.extend({
 
-                events: { 
+                events: {
                     'click button.remove-contact': 'removeContact',
                     'click button.refresh-contact': 'refreshContact'
                 },
@@ -321,6 +315,7 @@
 
                 events: {
                     'change input.fileupload': 'onFileSelection',
+                    'click .chat-msg__action-edit': 'onMessageEditButtonClicked',
                     'click .chatbox-navback': 'showControlBox',
                     'click .close-chatbox-button': 'close',
                     'click .new-msgs-indicator': 'viewUnreadMessages',
@@ -333,8 +328,8 @@
                     'click .toggle-smiley ul.emoji-picker li': 'insertEmoji',
                     'click .toggle-smiley': 'toggleEmojiMenu',
                     'click .upload-file': 'toggleFileUpload',
-                    'keypress .chat-textarea': 'keyPressed',
-                    'input .chat-textarea': 'inputChanged'
+                    'input .chat-textarea': 'inputChanged',
+                    'keydown .chat-textarea': 'keyPressed'
                 },
 
                 initialize () {
@@ -397,13 +392,13 @@
                     if (this.model.get('composing_spoiler')) {
                         placeholder = __('Hidden message');
                     } else {
-                        placeholder = __('Personal message');
+                        placeholder = __('Message');
                     }
                     const form_container = this.el.querySelector('.message-form-container');
                     form_container.innerHTML = tpl_chatbox_message_form(
                         _.extend(this.model.toJSON(), {
                             'hint_value': _.get(this.el.querySelector('.spoiler-hint'), 'value'),
-                            'label_personal_message': placeholder,
+                            'label_message': placeholder,
                             'label_send': __('Send'),
                             'label_spoiler_hint': __('Optional hint'),
                             'message_value': _.get(this.el.querySelector('.chat-textarea'), 'value'),
@@ -745,19 +740,19 @@
                           date = moment(el.getAttribute('data-isodate')),
                           next_el = el.nextElementSibling;
 
-                    if (!u.hasClass('chat-action', el) && !u.hasClass('chat-action', previous_el) &&
+                    if (!u.hasClass('chat-msg--action', el) && !u.hasClass('chat-msg--action', previous_el) &&
                             previous_el.getAttribute('data-from') === from &&
                             date.isBefore(moment(previous_el.getAttribute('data-isodate')).add(10, 'minutes'))) {
-                        u.addClass('chat-msg-followup', el);
+                        u.addClass('chat-msg--followup', el);
                     }
                     if (!next_el) { return; }
 
-                    if (!u.hasClass('chat-action', 'el') &&
+                    if (!u.hasClass('chat-msg--action', 'el') &&
                             next_el.getAttribute('data-from') === from &&
                             moment(next_el.getAttribute('data-isodate')).isBefore(date.add(10, 'minutes'))) {
-                        u.addClass('chat-msg-followup', next_el);
+                        u.addClass('chat-msg--followup', next_el);
                     } else {
-                        u.removeClass('chat-msg-followup', next_el);
+                        u.removeClass('chat-msg--followup', next_el);
                     }
                 },
 
@@ -801,7 +796,9 @@
                      *    (Object) message - The message Backbone object that was added.
                      */
                     this.showMessage(message);
-
+                    if (message.get('correcting')) {
+                        this.insertIntoTextArea(message.get('message'), true, true);
+                    }
                     _converse.emit('messageAdded', {
                         'message': message,
                         'chatbox': this.model
@@ -887,6 +884,9 @@
                     const textarea = this.el.querySelector('.chat-textarea'),
                           message = textarea.value;
 
+                    if (!message.replace(/\s/g, '').length) {
+                        return;
+                    }
                     let spoiler_hint;
                     if (this.model.get('composing_spoiler')) {
                         const hint_el = this.el.querySelector('form.sendXMPPMessage input.spoiler-hint');
@@ -894,28 +894,129 @@
                         hint_el.value = '';
                     }
                     textarea.value = '';
+                    u.removeClass('correcting', textarea);
                     textarea.focus();
                     // Trigger input event, so that the textarea resizes
                     const event = document.createEvent('Event');
                     event.initEvent('input', true, true);
                     textarea.dispatchEvent(event);
 
-                    if (message !== '') {
-                        this.onMessageSubmitted(message, spoiler_hint);
-                        _converse.emit('messageSend', message);
-                    }
+                    this.onMessageSubmitted(message, spoiler_hint);
+                    _converse.emit('messageSend', message);
                     this.setChatState(_converse.ACTIVE);
                 },
 
                 keyPressed (ev) {
                     /* Event handler for when a key is pressed in a chat box textarea.
                      */
-                    if (ev.keyCode === KEY.ENTER && !ev.shiftKey) {
-                        this.onFormSubmitted(ev);
-                    } else if (ev.keyCode !== KEY.FORWARD_SLASH && this.model.get('chat_state') !== _converse.COMPOSING) {
+                    if (ev.ctrlKey) {
+                        // When ctrl is pressed, no chars are entered into the textarea.
+                        return;
+                    }
+                    if (!ev.shiftKey && !ev.altKey) {
+                        if (ev.keyCode === _converse.keycodes.FORWARD_SLASH) {
+                            // Forward slash is used to run commands. Nothing to do here.
+                            return;
+                        } else if (ev.keyCode === _converse.keycodes.ESCAPE) {
+                            return this.onEscapePressed(ev);
+                        } else if (ev.keyCode === _converse.keycodes.ENTER) {
+                            return this.onFormSubmitted(ev);
+                        } else if (ev.keyCode === _converse.keycodes.UP_ARROW && !ev.target.selectionEnd) {
+                            return this.editEarlierMessage();
+                        } else if (ev.keyCode === _converse.keycodes.DOWN_ARROW && ev.target.selectionEnd === ev.target.value.length) {
+                            return this.editLaterMessage();
+                        }
+                    } 
+                    if (_.includes([
+                                _converse.keycodes.SHIFT,
+                                _converse.keycodes.META,
+                                _converse.keycodes.META_RIGHT,
+                                _converse.keycodes.ESCAPE,
+                                _converse.keycodes.ALT]
+                            , ev.keyCode)) {
+                        return;
+                    }
+                    if (this.model.get('chat_state') !== _converse.COMPOSING) {
                         // Set chat state to composing if keyCode is not a forward-slash
                         // (which would imply an internal command and not a message).
                         this.setChatState(_converse.COMPOSING);
+                    }
+                },
+
+                getOwnMessages () {
+                    return f(this.model.messages.filter({'sender': 'me'}));
+                },
+
+                onEscapePressed (ev) {
+                    ev.preventDefault();
+                    const idx = this.model.messages.findLastIndex('correcting'),
+                          message = idx >=0 ? this.model.messages.at(idx) : null;
+
+                    if (message) {
+                        message.save('correcting', false);
+                    }
+                    this.insertIntoTextArea('', true, false);
+                },
+
+                onMessageEditButtonClicked (ev) {
+                    ev.preventDefault();
+                    const idx = this.model.messages.findLastIndex('correcting'),
+                          currently_correcting = idx >=0 ? this.model.messages.at(idx) : null,
+                          message_el = u.ancestor(ev.target, '.chat-msg'),
+                          message = this.model.messages.findWhere({'msgid': message_el.getAttribute('data-msgid')});
+
+                    if (currently_correcting !== message) {
+                        if (!_.isNil(currently_correcting)) {
+                            currently_correcting.save('correcting', false);
+                        }
+                        message.save('correcting', true);
+                        this.insertIntoTextArea(u.prefixMentions(message), true, true);
+                    } else {
+                        message.save('correcting', false);
+                        this.insertIntoTextArea('', true, false);
+                    }
+                },
+
+                editLaterMessage () {
+                    let message;
+                    let idx = this.model.messages.findLastIndex('correcting');
+                    if (idx >= 0) {
+                        this.model.messages.at(idx).save('correcting', false);
+                        while (idx < this.model.messages.length-1) {
+                            idx += 1;
+                            const candidate = this.model.messages.at(idx);
+                            if (candidate.get('sender') === 'me' && candidate.get('message')) {
+                                message = candidate;
+                                break;
+                            }
+                        }
+                    }
+                    if (message) {
+                        this.insertIntoTextArea(message.get('message'), true, true);
+                        message.save('correcting', true);
+                    } else {
+                        this.insertIntoTextArea('', true, false);
+                    }
+                },
+
+                editEarlierMessage () {
+                    let message;
+                    let idx = this.model.messages.findLastIndex('correcting');
+                    if (idx >= 0) {
+                        this.model.messages.at(idx).save('correcting', false);
+                        while (idx > 0) {
+                            idx -= 1;
+                            const candidate = this.model.messages.at(idx);
+                            if (candidate.get('sender') === 'me' && candidate.get('message')) {
+                                message = candidate;
+                                break;
+                            }
+                        }
+                    }
+                    message = message || this.getOwnMessages().findLast((msg) => msg.get('message'));
+                    if (message) {
+                        this.insertIntoTextArea(message.get('message'), true, true);
+                        message.save('correcting', true);
                     }
                 },
 
@@ -935,14 +1036,25 @@
                     return this;
                 },
 
-                insertIntoTextArea (value) {
-                    const textbox_el = this.el.querySelector('.chat-textarea');
-                    let existing = textbox_el.value;
-                    if (existing && (existing[existing.length-1] !== ' ')) {
-                        existing = existing + ' ';
+                insertIntoTextArea (value, replace=false, correcting=false) {
+                    const textarea = this.el.querySelector('.chat-textarea');
+                    if (correcting) {
+                        u.addClass('correcting', textarea);
+                    } else {
+                        u.removeClass('correcting', textarea);
                     }
-                    textbox_el.value = existing+value+' ';
-                    textbox_el.focus()
+                    if (replace) {
+                        textarea.value = '';
+                        textarea.value = value;
+                    } else {
+                        let existing = textarea.value;
+                        if (existing && (existing[existing.length-1] !== ' ')) {
+                            existing = existing + ' ';
+                        }
+                        textarea.value = '';
+                        textarea.value = existing+value+' ';
+                    }
+                    u.putCurserAtEnd(textarea);
                 },
 
                 createEmojiPicker () {
@@ -1016,13 +1128,13 @@
                     let text;
                     if (u.isVisible(this.el)) {
                         if (show === 'offline') {
-                            text = fullname+' '+__('has gone offline');
+                            text = __('%1$s has gone offline', fullname);
                         } else if (show === 'away') {
-                            text = fullname+' '+__('has gone away');
+                            text = __('%1$s has gone away', fullname);
                         } else if ((show === 'dnd')) {
-                            text = fullname+' '+__('is busy');
+                            text = __('%1$s is busy', fullname);
                         } else if (show === 'online') {
-                            text = fullname+' '+__('is online');
+                            text = __('%1$s is online', fullname);
                         }
                         if (text) {
                             this.content.insertAdjacentHTML(

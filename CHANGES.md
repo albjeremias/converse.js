@@ -7,6 +7,7 @@
 - #161 XEP-0363: HTTP File Upload
 - #194 Include entity capabilities in outgoing presence stanzas
 - #337 API call to update a VCard
+- #421 XEP-0308: Last Message Correction
 - #968 Use nickname from VCard when joining a room
 - #1091 There's now only one CSS file for all view modes.
 - #1094 Show room members who aren't currently online
@@ -20,8 +21,9 @@
 - Add a checkbox to indicate whether a trusted device is being used or not.
   If the device is not trusted, sessionStorage is used and all user data is deleted from the browser cache upon logout.
   If the device is trusted, localStorage is used and user data is cached indefinitely.
-- Initial support for XEP-0357 Push Notifications, specifically registering an "App Server".
+- Initial support for [XEP-0357 Push Notifications](https://xmpp.org/extensions/xep-0357.html), specifically registering an "App Server".
 - Add support for logging in via OAuth (see the [oauth_providers](https://conversejs.org/docs/html/configurations.html#oauth-providers) setting)
+- Add support for [XEP-0372 References](https://xmpp.org/extensions/xep-0372.html), specifically section "3.2 Mentions".
 
 ### Bugfixes
 
@@ -29,6 +31,7 @@
 - Documentation includes utf-8 charset to make minfied versions compatible across platforms. #1017
 - #1026 Typing in MUC shows "Typing from another device"
 - #1039 Multi-option data form elements not shown and saved correctly
+- #1143 Able to send blank message
 
 ### API changes
 
@@ -38,6 +41,9 @@
 - New API method `_converse.api.vcard.update`.
 - The `contactStatusChanged` event has been renamed to `contactPresenceChanged`
   and a event `presenceChanged` is now also triggered on the contact.
+- `_converse.api.chats.open` and `_converse.api.rooms.open` now returns a 
+  `Presence` which resolves with the `Backbone.Model` representing the chat
+  object.
 
 ## UI changes
 

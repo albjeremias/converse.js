@@ -65,9 +65,8 @@
         }
 
         .user-custom-message {
-            color: white;
+            color: lighten($chat-head-color, 50%);
             font-size: 75%;
-            font-style: italic;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -125,7 +124,7 @@
             background-color: $chat-head-color;
             box-shadow: 1px 3px 5px 3px rgba(0, 0, 0, 0.4);
             z-index: 1;
-            overflow-y: scroll;
+            overflow-y: hidden;
             width: 100%;
 
             @media screen and (max-height: $mobile-landscape-height) {
@@ -236,11 +235,18 @@
                 width: 100%;
             }
 
+            .suggestion-box__results {
+                &:after {
+                    display: none;
+                }
+            }
+
             .spoiler-hint {
                 width: 100%;
             }
 
             .chat-textarea {
+                color: $chat-textarea-color;
                 border-top-left-radius: 0;
                 border-top-right-radius: 0;
                 @include border-bottom-radius($chatbox-border-radius);
@@ -249,8 +255,12 @@
                 border: none;
                 min-height: $chat-textarea-height;
                 margin-bottom: -4px; // Not clear why this is necessar :(
+                resize: none;
                 &.spoiler {
                     height: 42px;
+                }
+                &.correcting {
+                    background-color: lighten($chat-head-color, 50%);
                 }
             }
 
@@ -270,7 +280,7 @@
                 margin: 0;
                 padding: 0.25em;
                 display: block;
-                border-top: 8px solid $chat-head-color;
+                border-top: 4px solid $chat-head-color;
                 background-color: white;
                 color: $chat-head-color;
                 .fa, .fa:hover {
@@ -436,6 +446,12 @@
 
 /* ******************* Overlay and embedded styles *************************** */
 
+#conversejs.converse-embedded {
+    .chat-textarea {
+        max-height: $fullpage-max-chat-textarea-height;
+    }
+}
+
 #conversejs.converse-embedded,
 #conversejs.converse-overlayed {
     .chat-head {
@@ -464,21 +480,6 @@
         .box-flyout {
             min-width: $overlayed-chat-width!important;
             width: $overlayed-chat-width;
-        }
-
-        .chat-body {
-            .chat-message {
-                line-height: $line-height-large;
-                .chat-msg-author {
-                    line-height: $line-height-large;
-                }
-                .chat-msg-content {
-                    line-height: $line-height-large;
-                    .emojione {
-                        margin-bottom: -5px;
-                    }
-                }
-            }
         }
     }
     .chatbox {
@@ -552,7 +553,7 @@
         font-size: $font-size-huge;
         padding: 0;
         .user-custom-message {
-            font-size: 50%;
+            font-size: 70%;
             height: auto;
             line-height: $line-height;
         }
@@ -577,7 +578,7 @@
 
         @include make-col-ready();
         @include media-breakpoint-up(md) {
-            @include make-col(9);
+            @include make-col(8);
         }
         @include media-breakpoint-up(lg) {
             @include make-col(9);
@@ -592,26 +593,12 @@
             height: $fullpage-chat-height;
             min-height: $fullpage-chat-height/2;
             width: $fullpage-chat-width;
+            overflow: hidden;
         }
         .chat-body {
             background-color: $green-riot;
             border-top-left-radius: $chatbox-border-radius;
             border-top-right-radius: $chatbox-border-radius;
-
-            .chat-message {
-                line-height: $line-height;
-                font-size: $font-size-small;
-                .chat-msg-author {
-                    line-height: $line-height;
-                }
-                .chat-msg-content {
-                    line-height: $line-height;
-                    .emojione {
-                        height: $line-height;
-                        margin-bottom: -$line-height/4;
-                    }
-                }
-            }
         }
         .chat-content {
             border-top-left-radius: $chatbox-border-radius;

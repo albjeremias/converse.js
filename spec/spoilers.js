@@ -40,9 +40,9 @@
 
             return test_utils.waitUntil(() => view.model.vcard.get('fullname') === 'Max Frankfurter')
             .then(function () {
-                expect(view.el.querySelector('.chat-msg-author').textContent).toBe('Max Frankfurter');
+                expect(view.el.querySelector('.chat-msg__author').textContent.trim()).toBe('Max Frankfurter');
 
-                var message_content = view.el.querySelector('.chat-msg-text');
+                var message_content = view.el.querySelector('.chat-msg__text');
                 expect(message_content.textContent).toBe(spoiler);
 
                 var spoiler_hint_el = view.el.querySelector('.spoiler-hint');
@@ -79,9 +79,9 @@
             var view = _converse.chatboxviews.get(sender_jid);
             return test_utils.waitUntil(() => view.model.vcard.get('fullname') === 'Max Frankfurter')
             .then(function () {
-                expect(_.includes(view.el.querySelector('.chat-msg-author').textContent, 'Max Frankfurter')).toBeTruthy();
+                expect(_.includes(view.el.querySelector('.chat-msg__author').textContent, 'Max Frankfurter')).toBeTruthy();
 
-                var message_content = view.el.querySelector('.chat-msg-text');
+                var message_content = view.el.querySelector('.chat-msg__text');
                 expect(message_content.textContent).toBe(spoiler);
 
                 var spoiler_hint_el = view.el.querySelector('.spoiler-hint');
@@ -92,12 +92,14 @@
 
         it("can be sent without a hint",
             mock.initConverseWithPromises(
-                null, ['rosterGroupsFetched'], {},
+                null, ['rosterGroupsFetched', 'chatBoxesFetched'], {},
                 function (done, _converse) {
 
-            test_utils.createContacts(_converse, 'current');
+            test_utils.createContacts(_converse, 'current', 1);
+            _converse.emit('rosterContactsFetched');
+
             test_utils.openControlBox();
-            var contact_jid = mock.cur_names[0].replace(/ /g,'.').toLowerCase() + '@localhost';
+            const contact_jid = mock.cur_names[0].replace(/ /g,'.').toLowerCase() + '@localhost';
 
             // XXX: We need to send a presence from the contact, so that we
             // have a resource, that resource is then queried to see
@@ -108,9 +110,9 @@
                 'to': 'dummy@localhost'
             });
             _converse.connection._dataRecv(test_utils.createRequest(presence));
-            test_utils.openChatBoxFor(_converse, contact_jid);
-
-            test_utils.waitUntilDiscoConfirmed(_converse, contact_jid+'/phone', [], [Strophe.NS.SPOILER]).then(function () {
+            test_utils.openChatBoxFor(_converse, contact_jid)
+            .then(() => test_utils.waitUntilDiscoConfirmed(_converse, contact_jid+'/phone', [], [Strophe.NS.SPOILER]))
+            .then(() => {
                 var view = _converse.chatboxviews.get(contact_jid);
                 spyOn(view, 'onMessageSubmitted').and.callThrough();
                 spyOn(_converse.connection, 'send');
@@ -148,9 +150,9 @@
                 expect(body_el.textContent).toBe('This is the spoiler');
 
                 /* Test the HTML spoiler message */
-                expect(view.el.querySelector('.chat-msg-author').textContent).toBe('Max Mustermann');
+                expect(view.el.querySelector('.chat-msg__author').textContent.trim()).toBe('Max Mustermann');
 
-                var spoiler_msg_el = view.el.querySelector('.chat-msg-text.spoiler');
+                var spoiler_msg_el = view.el.querySelector('.chat-msg__text.spoiler');
                 expect(spoiler_msg_el.textContent).toBe('This is the spoiler');
                 expect(_.includes(spoiler_msg_el.classList, 'collapsed')).toBeTruthy();
 
@@ -167,10 +169,12 @@
 
         it("can be sent with a hint",
             mock.initConverseWithPromises(
-                null, ['rosterGroupsFetched'], {},
+                null, ['rosterGroupsFetched', 'chatBoxesFetched'], {},
                 function (done, _converse) {
 
-            test_utils.createContacts(_converse, 'current');
+            test_utils.createContacts(_converse, 'current', 1);
+            _converse.emit('rosterContactsFetched');
+
             test_utils.openControlBox();
             var contact_jid = mock.cur_names[0].replace(/ /g,'.').toLowerCase() + '@localhost';
 
@@ -183,9 +187,9 @@
                 'to': 'dummy@localhost'
             });
             _converse.connection._dataRecv(test_utils.createRequest(presence));
-            test_utils.openChatBoxFor(_converse, contact_jid);
-
-            test_utils.waitUntilDiscoConfirmed(_converse, contact_jid+'/phone', [], [Strophe.NS.SPOILER]).then(function () {
+            test_utils.openChatBoxFor(_converse, contact_jid)
+            .then(() => test_utils.waitUntilDiscoConfirmed(_converse, contact_jid+'/phone', [], [Strophe.NS.SPOILER]))
+            .then(() => {
                 var view = _converse.chatboxviews.get(contact_jid);
                 var spoiler_toggle = view.el.querySelector('.toggle-compose-spoiler');
                 spoiler_toggle.click();
@@ -206,17 +210,17 @@
                 expect(view.onMessageSubmitted).toHaveBeenCalled();
 
                 /* Test the XML stanza 
-                *
-                * <message from="dummy@localhost/resource"
-                *          to="max.frankfurter@localhost"
-                *          type="chat"
-                *          id="4547c38b-d98b-45a5-8f44-b4004dbc335e"
-                *          xmlns="jabber:client">
-                *    <body>This is the spoiler</body>
-                *    <active xmlns="http://jabber.org/protocol/chatstates"/>
-                *    <spoiler xmlns="urn:xmpp:spoiler:0">This is the hint</spoiler>
-                * </message>"
-                */
+                 *
+                 * <message from="dummy@localhost/resource"
+                 *          to="max.frankfurter@localhost"
+                 *          type="chat"
+                 *          id="4547c38b-d98b-45a5-8f44-b4004dbc335e"
+                 *          xmlns="jabber:client">
+                 *    <body>This is the spoiler</body>
+                 *    <active xmlns="http://jabber.org/protocol/chatstates"/>
+                 *    <spoiler xmlns="urn:xmpp:spoiler:0">This is the hint</spoiler>
+                 * </message>"
+                 */
                 var stanza = _converse.connection.send.calls.argsFor(0)[0].tree();
                 var spoiler_el = stanza.querySelector('spoiler[xmlns="urn:xmpp:spoiler:0"]');
 
@@ -227,9 +231,9 @@
                 expect(body_el.textContent).toBe('This is the spoiler');
 
                 /* Test the HTML spoiler message */
-                expect(view.el.querySelector('.chat-msg-author').textContent).toBe('Max Mustermann');
+                expect(view.el.querySelector('.chat-msg__author').textContent.trim()).toBe('Max Mustermann');
 
-                var spoiler_msg_el = view.el.querySelector('.chat-msg-text.spoiler');
+                var spoiler_msg_el = view.el.querySelector('.chat-msg__text.spoiler');
                 expect(spoiler_msg_el.textContent).toBe('This is the spoiler');
                 expect(_.includes(spoiler_msg_el.classList, 'collapsed')).toBeTruthy();
 

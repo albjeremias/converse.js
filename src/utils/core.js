@@ -98,6 +98,21 @@
 
     var u = {};
 
+    u.getLongestSubstring = function (string, candidates) {
+        function reducer (accumulator, current_value) {
+            if (string.startsWith(current_value)) {
+                if (current_value.length > accumulator.length) {
+                    return current_value;
+                } else {
+                    return accumulator;
+                }
+            } else {
+                return accumulator;
+            }
+        }
+        return candidates.reduce(reducer, '');
+    }
+
     u.getNextElement = function (el, selector='*') {
         let next_el = el.nextElementSibling;
         while (!_.isNull(next_el) && !sizzle.matchesSelector(next_el, selector)) {
@@ -210,6 +225,42 @@
             .replace(/"/g, "&quot;");
     };
 
+    u.escapeURL = function (url) {
+        return encodeURI(decodeURI(url)).replace(/[!'()]/g, escape).replace(/\*/g, "%2A");
+    };
+
+    u.prefixMentions = function (message) {
+        /* Given a message object, return its text with @ chars
+         * inserted before the mentioned nicknames.
+         */
+        let text = message.get('message');
+        (message.get('references') || [])
+            .sort((a, b) => b.begin - a.begin)
+            .forEach(ref => {
+                text = `${text.slice(0, ref.begin)}@${text.slice(ref.begin)}`
+            });
+        return text;
+    };
+
+    u.addMentionsMarkup = function (text, references, chatbox) {
+        if (chatbox.get('message_type') !== 'groupchat') {
+            return text;
+        }
+        const nick = chatbox.get('nick');
+        references
+            .sort((a, b) => b.begin - a.begin)
+            .forEach(ref => {
+                const mention = text.slice(ref.begin, ref.end)
+                chatbox;
+                if (mention === nick) {
+                    text = text.slice(0, ref.begin) + `<span class="mention mention--self badge badge-info">${mention}</span>` + text.slice(ref.end);
+                } else {
+                    text = text.slice(0, ref.begin) + `<span class="mention">${mention}</span>` + text.slice(ref.end);
+                }
+            });
+        return text;
+    };
+
     u.addHyperlinks = function (text) {
         return URI.withinString(text, function (url) {
             var uri = new URI(url);
@@ -217,9 +268,13 @@
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
                 url = 'http://' + url;
             }
-            url = encodeURI(decodeURI(url)).replace(/[!'()]/g, escape).replace(/\*/g, "%2A");
-            return `<a target="_blank" rel="noopener" href="${u.escapeHTML(url)}">${u.escapeHTML(uri.readable())}</a>`;
+            url = u.escapeHTML(u.escapeURL(url));
+            return `<a target="_blank" rel="noopener" href="${url}">${u.escapeHTML(uri.readable())}</a>`;
         });
+    };
+
+    u.renderNewLines = function (text) {
+        return text.replace(/\n\n+/g, '<br><br>').replace(/\n/g, '<br/>');
     };
 
     u.renderImageURLs = function (_converse, obj) {
@@ -251,7 +306,8 @@
     };
 
     u.renderFileURL = function (_converse, url) {
-        const uri = new URI(url), { __ } = _converse,
+        const uri = new URI(url),
+              { __ } = _converse,
               filename = uri.filename();
         if (!_.includes(["https", "http"], uri.protocol()) ||
             filename.endsWith('mp3') || filename.endsWith('mp4') ||
@@ -263,7 +319,7 @@
         }
         return tpl_file({
             'url': url,
-            'label_download': __('Download: "%1$s', filename)
+            'label_download': __('Download "%1$s"', filename)
         })
     };
 
@@ -799,7 +855,26 @@
         } else {
             model.set(attributes);
         }
-    }
+    };
+
+    u.siblingIndex = function (el) {
+        /* eslint-disable no-cond-assign */
+        for (var i = 0; el = el.previousElementSibling; i++);
+        return i;
+    };
+
+    u.getCurrentWord = function (input) {
+        const cursor = input.selectionEnd || undefined;
+        return _.last(input.value.slice(0, cursor).split(' '));
+    };
+
+    u.replaceCurrentWord = function (input, new_value) {
+        const cursor = input.selectionEnd || undefined,
+              current_word = _.last(input.value.slice(0, cursor).split(' ')),
+              value = input.value;
+        input.value = value.slice(0, cursor - current_word.length) + `${new_value} ` + value.slice(cursor);
+        input.selectionEnd = cursor - current_word.length + new_value.length + 1;
+    };
 
     u.isVisible = function (el) {
         if (u.hasClass('hidden', el)) {
@@ -840,5 +915,25 @@
         return result;
     };
 
+    u.putCurserAtEnd = function (textarea) {
+        if (textarea !== document.activeElement) {
+            textarea.focus();
+        }
+        // Double the length because Opera is inconsistent about whether a carriage return is one character or two.
+        const len = textarea.value.length * 2;
+        // Timeout seems to be required for Blink
+        setTimeout(() => textarea.setSelectionRange(len, len), 1);
+        // Scroll to the bottom, in case we're in a tall textarea
+        // (Necessary for Firefox and Chrome)
+        this.scrollTop = 999999;
+    };
+
+    u.getUniqueId = function () {
+        return 'xxxxxxxx-xxxx'.replace(/[x]/g, function(c) {
+            var r = Math.random() * 16 | 0,
+                v = c === 'x' ? r : r & 0x3 | 0x8;
+            return v.toString(16);
+        });
+    };
     return u;
 }));

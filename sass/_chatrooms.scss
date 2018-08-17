@@ -116,11 +116,12 @@
                         color: $chat-head-text-color;
                     }
                 }
-                .mentioned {
-                    font-weight: bold;
-                }
-                .disconnect-msg {
-                    padding: 2em 2em 0 2em;
+                .disconnect-container {
+                    margin: 1em;
+                    width: 100%;
+                    h3.disconnect-msg {
+                        padding-bottom: 1em;
+                    }
                 }
                 .chat-area {
                     display: flex;
@@ -245,12 +246,6 @@
                         font-size: 90%;
                         color: $error-color;
                     }
-                    .chatroom-form {
-                        label,
-                        input[type=text] {
-                            display: block;
-                        }
-                    }
                     input[type=button],
                     input[type=submit] {
                         margin: 0 0.5em;
@@ -265,7 +260,7 @@
         .sendXMPPMessage {
             .chat-toolbar {
                 background-color: white;
-                border-top: 8px solid $chatroom-head-color;
+                border-top: 4px solid $chatroom-head-color;
                 color: $chatroom-head-color;
                 .fa, .fa:hover {
                     color: $chatroom-head-color;
@@ -273,6 +268,9 @@
             }
             .chat-textarea {
                 border-bottom-right-radius: 0;
+                &.correcting {
+                    background-color: lighten($chatroom-head-color, 30%);
+                }
             }
             .send-button {
                 background-color: $chatroom-head-color;
@@ -280,6 +278,7 @@
         }
 
         .room-invite {
+            padding-bottom: 1em;
             .invited-contact {
                 margin: -1px 0 0 -1px;
                 width: 100%;

@@ -25,7 +25,7 @@
         'none':         2,
     };
 
-    const { Strophe, Backbone, Promise, $iq, $build, $msg, $pres, b64_sha1, sizzle, _, moment } = converse.env;
+    const { Strophe, Backbone, Promise, $iq, $build, $msg, $pres, b64_sha1, sizzle, f, moment, _ } = converse.env;
 
     // Add Strophe Namespaces
     Strophe.addNamespace('MUC_ADMIN', Strophe.NS.MUC + "#admin");
@@ -77,9 +77,9 @@
             // New functions which don't exist yet can also be added.
 
             tearDown () {
-                const rooms = this.chatboxes.where({'type': converse.CHATROOMS_TYPE});
-                _.each(rooms, function (room) {
-                    u.safeSave(room, {'connection_status': converse.ROOMSTATUS.DISCONNECTED});
+                const groupchats = this.chatboxes.where({'type': converse.CHATROOMS_TYPE});
+                _.each(groupchats, function (groupchat) {
+                    u.safeSave(groupchat, {'connection_status': converse.ROOMSTATUS.DISCONNECTED});
                 });
                 this.__super__.tearDown.call(this, arguments);
             },
@@ -139,7 +139,7 @@
 
 
             _converse.openChatRoom = function (jid, settings, bring_to_foreground) {
-                /* Opens a chat room, making sure that certain attributes
+                /* Opens a groupchat, making sure that certain attributes
                  * are correct, for example that the "type" is set to
                  * "chatroom".
                  */
@@ -171,7 +171,7 @@
                           'affiliation': null,
                           'connection_status': converse.ROOMSTATUS.DISCONNECTED,
                           'name': '',
-                          'nick': _converse.xmppstatus.get('nickname'),
+                          'nick': _converse.xmppstatus.get('nickname') || _converse.nickname,
                           'description': '',
                           'features_fetched': false,
                           'roomconfig': {},
@@ -195,7 +195,7 @@
 
                 registerHandlers () {
                     /* Register presence and message handlers for this chat
-                     * room
+                     * groupchat
                      */
                     const room_jid = this.get('jid');
                     this.removeHandlers();
@@ -204,7 +204,7 @@
                             this.onPresence(stanza);
                             return true;
                         },
-                        Strophe.NS.MUC, 'presence', null, null, room_jid,
+                        null, 'presence', null, null, room_jid,
                         {'ignoreNamespaceFragment': true, 'matchBareFromJid': true}
                     );
                     this.message_handler = _converse.connection.addHandler((stanza) => {
@@ -218,7 +218,7 @@
 
                 removeHandlers () {
                     /* Remove the presence and message handlers that were
-                     * registered for this chat room.
+                     * registered for this groupchat.
                      */
                     if (this.message_handler) {
                         _converse.connection.deleteHandler(this.message_handler);
@@ -251,19 +251,19 @@
                 },
 
                 join (nick, password) {
-                    /* Join the chat room.
+                    /* Join the groupchat.
                      *
                      * Parameters:
                      *  (String) nick: The user's nickname
                      *  (String) password: Optional password, if required by
-                     *      the room.
+                     *      the groupchat.
                      */
                     nick = nick ? nick : this.get('nick');
                     if (!nick) {
                         throw new TypeError('join: You need to provide a valid nickname');
                     }
                     if (this.get('connection_status') === converse.ROOMSTATUS.ENTERED) {
-                        // We have restored a chat room from session storage,
+                        // We have restored a groupchat from session storage,
                         // so we don't send out a presence stanza again.
                         return this;
                     }
@@ -281,7 +281,7 @@
                 },
 
                 leave (exit_msg) {
-                    /* Leave the chat room.
+                    /* Leave the groupchat.
                      *
                      * Parameters:
                      *  (String) exit_msg: Optional message to indicate your
@@ -308,14 +308,76 @@
                     _converse.connection.sendPresence(presence);
                 },
 
+                getReferenceForMention (mention, index) {
+                    const longest_match = u.getLongestSubstring(mention, this.occupants.map(o => o.get('nick')));
+                    if (!longest_match) {
+                        return null;
+                    }
+                    if ((mention[longest_match.length] || '').match(/[A-Za-zäëïöüâêîôûáéíóúàèìòùÄËÏÖÜÂÊÎÔÛÁÉÍÓÚÀÈÌÒÙ]/i)) {
+                        // avoid false positives, i.e. mentions that have
+                        // further alphabetical characters than our longest
+                        // match.
+                        return null;
+                    }
+                    const occupant = this.occupants.findOccupant({'nick': longest_match});
+                    if (!occupant) {
+                        return null;
+                    }
+                    const obj = {
+                        'begin': index,
+                        'end': index + longest_match.length,
+                        'value': longest_match,
+                        'type': 'mention'
+                    };
+                    if (occupant.get('jid')) {
+                        obj.uri = `xmpp:${occupant.get('jid')}`
+                    }
+                    return obj;
+                },
+
+                extractReference (text, index) {
+                    for (let i=index; i<text.length; i++) {
+                        if (text[i] !== '@') {
+                            continue
+                        } else {
+                            const match = text.slice(i+1),
+                                  ref = this.getReferenceForMention(match, i)
+                            if (ref) {
+                                return [text.slice(0, i) + match, ref, i]
+                            }
+                        }
+                    }
+                    return;
+                },
+
+                parseTextForReferences (text) {
+                    const refs = [];
+                    let index = 0;
+                    while (index < (text || '').length) {
+                        const result = this.extractReference(text, index);
+                        if (result) {
+                            text = result[0]; // @ gets filtered out
+                            refs.push(result[1]);
+                            index = result[2];
+                        } else {
+                            break;
+                        }
+                    }
+                    return [text, refs];
+                },
+
                 getOutgoingMessageAttributes (text, spoiler_hint) {
                     const is_spoiler = this.get('composing_spoiler');
+                    var references;
+                    [text, references] = this.parseTextForReferences(text);
+
                     return {
-                        'nick': this.get('nick'),
                         'from': `${this.get('jid')}/${this.get('nick')}`,
                         'fullname': this.get('nick'),
                         'is_spoiler': is_spoiler,
                         'message': text ? u.httpToGeoUri(emojione.shortnameToUnicode(text), _converse) : undefined,
+                        'nick': this.get('nick'),
+                        'references': references,
                         'sender': 'me',
                         'spoiler_hint': is_spoiler ? spoiler_hint : undefined,
                         'type': 'groupchat'
@@ -323,35 +385,37 @@
                 },
 
                 getRoomFeatures () {
-                    /* Fetch the room disco info, parse it and then save it.
+                    /* Fetch the groupchat disco info, parse it and then save it.
                      */
                     return new Promise((resolve, reject) => {
-                        _converse.api.disco.info(
-                            this.get('jid'),
-                            null,
-                            _.flow(this.parseRoomFeatures.bind(this), resolve),
-                            () => { reject(new Error("Could not parse the room features")) },
-                            5000
-                        );
+                        _converse.api.disco.info(this.get('jid'), null)
+                            .then((stanza) => {
+                                this.parseRoomFeatures(stanza);
+                                resolve()
+                            }).catch((err) => {
+                                _converse.log("Could not parse the groupchat features", Strophe.LogLevel.WARN);
+                                _converse.log(err, Strophe.LogLevel.WARN);
+                                reject(err);
+                            });
                     });
                 },
 
                 getRoomJIDAndNick (nick) {
                     /* Utility method to construct the JID for the current user
-                     * as occupant of the room.
+                     * as occupant of the groupchat.
                      *
-                     * This is the room JID, with the user's nick added at the
+                     * This is the groupchat JID, with the user's nick added at the
                      * end.
                      *
-                     * For example: room@conference.example.org/nickname
+                     * For example: groupchat@conference.example.org/nickname
                      */
                     if (nick) {
                         this.save({'nick': nick});
                     } else {
                         nick = this.get('nick');
                     }
-                    const room = this.get('jid');
-                    const jid = Strophe.getBareJidFromJid(room);
+                    const groupchat = this.get('jid');
+                    const jid = Strophe.getBareJidFromJid(groupchat);
                     return jid + (nick !== null ? `/${nick}` : "");
                 },
                 
@@ -384,7 +448,7 @@
                      *    (String) reason - Optional reason for the invitation
                      */
                     if (this.get('membersonly')) {
-                        // When inviting to a members-only room, we first add
+                        // When inviting to a members-only groupchat, we first add
                         // the person to the member list by giving them an
                         // affiliation of 'member' (if they're not affiliated
                         // already), otherwise they won't be able to join.
@@ -402,6 +466,7 @@
                     };
                     if (reason !== null) { attrs.reason = reason; }
                     if (this.get('password')) { attrs.password = this.get('password'); }
+
                     const invitation = $msg({
                         from: _converse.connection.jid,
                         to: recipient,
@@ -416,7 +481,7 @@
                 },
 
                 parseRoomFeatures (iq) {
-                    /* Parses an IQ stanza containing the room's features.
+                    /* Parses an IQ stanza containing the groupchat's features.
                      *
                      * See http://xmpp.org/extensions/xep-0045.html#disco-roominfo
                      *
@@ -456,7 +521,7 @@
 
                 requestMemberList (affiliation) {
                     /* Send an IQ stanza to the server, asking it for the
-                     * member-list of this room.
+                     * member-list of this groupchat.
                      *
                      * See: http://xmpp.org/extensions/xep-0045.html#modifymember
                      *
@@ -468,13 +533,11 @@
                      *  A promise which resolves once the list has been
                      *  retrieved.
                      */
-                    return new Promise((resolve, reject) => {
-                        affiliation = affiliation || 'member';
-                        const iq = $iq({to: this.get('jid'), type: "get"})
-                            .c("query", {xmlns: Strophe.NS.MUC_ADMIN})
-                                .c("item", {'affiliation': affiliation});
-                        _converse.connection.sendIQ(iq, resolve, reject);
-                    });
+                    affiliation = affiliation || 'member';
+                    const iq = $iq({to: this.get('jid'), type: "get"})
+                        .c("query", {xmlns: Strophe.NS.MUC_ADMIN})
+                            .c("item", {'affiliation': affiliation});
+                    return _converse.api.sendIQ(iq);
                 },
 
                 setAffiliation (affiliation, members) {
@@ -510,7 +573,7 @@
                 },
 
                 saveConfiguration (form) {
-                    /* Submit the room configuration form by sending an IQ
+                    /* Submit the groupchat configuration form by sending an IQ
                      * stanza to the server.
                      *
                      * Returns a promise which resolves once the XMPP server
@@ -529,7 +592,7 @@
                 },
 
                 autoConfigureChatRoom () {
-                    /* Automatically configure room based on this model's
+                    /* Automatically configure groupchat based on this model's
                      * 'roomconfig' data.
                      *
                      * Returns a promise which resolves once a response IQ has
@@ -570,7 +633,7 @@
                 },
 
                 fetchRoomConfiguration () {
-                    /* Send an IQ stanza to fetch the room configuration data.
+                    /* Send an IQ stanza to fetch the groupchat configuration data.
                      * Returns a promise which resolves once the response IQ
                      * has been received.
                      */
@@ -587,17 +650,17 @@
                 },
 
                 sendConfiguration (config, callback, errback) {
-                    /* Send an IQ stanza with the room configuration.
+                    /* Send an IQ stanza with the groupchat configuration.
                      *
                      * Parameters:
-                     *  (Array) config: The room configuration
+                     *  (Array) config: The groupchat configuration
                      *  (Function) callback: Callback upon succesful IQ response
                      *      The first parameter passed in is IQ containing the
-                     *      room configuration.
+                     *      groupchat configuration.
                      *      The second is the response IQ from the server.
                      *  (Function) errback: Callback upon error IQ response
                      *      The first parameter passed in is IQ containing the
-                     *      room configuration.
+                     *      groupchat configuration.
                      *      The second is the response IQ from the server.
                      */
                     const iq = $iq({to: this.get('jid'), type: "set"})
@@ -655,7 +718,7 @@
 
                 setAffiliations (members) {
                     /* Send IQ stanzas to the server to modify the
-                     * affiliations in this room.
+                     * affiliations in this groupchat.
                      *
                      * See: http://xmpp.org/extensions/xep-0045.html#modifymember
                      *
@@ -675,16 +738,14 @@
                     if (_.isString(affiliations)) {
                         affiliations = [affiliations];
                     }
-                    return new Promise((resolve, reject) => {
-                        const promises = _.map(
-                            affiliations,
-                            _.partial(this.requestMemberList.bind(this))
-                        );
-                        Promise.all(promises).then(
-                            _.flow(u.marshallAffiliationIQs, resolve),
-                            _.flow(u.marshallAffiliationIQs, resolve)
-                        );
-                    });
+                    const promises = _.map(
+                        affiliations,
+                        _.partial(this.requestMemberList.bind(this))
+                    );
+                    return Promise.all(promises).then(
+                        (iq) => u.marshallAffiliationIQs(iq),
+                        (iq) => u.marshallAffiliationIQs(iq)
+                    );
                 },
 
                 updateMemberLists (members, affiliations, deltaFunc) {
@@ -713,7 +774,7 @@
 
                 checkForReservedNick (callback, errback) {
                     /* Use service-discovery to ask the XMPP server whether
-                     * this user has a reserved nickname for this room.
+                     * this user has a reserved nickname for this groupchat.
                      * If so, we'll use that, otherwise we render the nickname form.
                      *
                      * Parameters:
@@ -834,7 +895,7 @@
                 },
 
                 onMessage (stanza) {
-                    /* Handler for all MUC messages sent to this chat room.
+                    /* Handler for all MUC messages sent to this groupchat.
                      *
                      * Parameters:
                      *  (XMLElement) stanza: The message stanza.
@@ -846,22 +907,23 @@
                     if (!_.isNull(forwarded)) {
                         stanza = forwarded.querySelector('message');
                     }
-                    const jid = stanza.getAttribute('from'),
-                        resource = Strophe.getResourceFromJid(jid),
-                        sender = resource && Strophe.unescapeNode(resource) || '',
-                        subject = _.propertyOf(stanza.querySelector('subject'))('textContent');
-
                     if (this.isDuplicate(stanza, original_stanza)) {
                         return;
                     }
-                    if (subject) {
-                        u.safeSave(this, {'subject': {'author': sender, 'text': subject}});
+                    const jid = stanza.getAttribute('from'),
+                          resource = Strophe.getResourceFromJid(jid),
+                          sender = resource && Strophe.unescapeNode(resource) || '';
+
+                    if (!this.handleMessageCorrection(stanza)) {
+                        const subject = _.propertyOf(stanza.querySelector('subject'))('textContent');
+                        if (subject) {
+                            u.safeSave(this, {'subject': {'author': sender, 'text': subject}});
+                        }
+                        if (sender === '') {
+                            return;
+                        }
+                        this.incrementUnreadMsgCounter(this.createMessage(stanza, original_stanza));
                     }
-                    if (sender === '') {
-                        return;
-                    }
-                    this.incrementUnreadMsgCounter(original_stanza);
-                    this.createMessage(stanza, original_stanza);
                     if (sender !== this.get('nick')) {
                         // We only emit an event if it's not our own message
                         _converse.emit('message', {'stanza': original_stanza, 'chatbox': this});
@@ -892,14 +954,14 @@
                     /* Handles a received presence relating to the current
                      * user.
                      *
-                     * For locked rooms (which are by definition "new"), the
-                     * room will either be auto-configured or created instantly
-                     * (with default config) or a configuration room will be
+                     * For locked groupchats (which are by definition "new"), the
+                     * groupchat will either be auto-configured or created instantly
+                     * (with default config) or a configuration groupchat will be
                      * rendered.
                      *
-                     * If the room is not locked, then the room will be
+                     * If the groupchat is not locked, then the groupchat will be
                      * auto-configured only if applicable and if the current
-                     * user is the room's owner.
+                     * user is the groupchat's owner.
                      *
                      * Parameters:
                      *  (XMLElement) pres: The stanza
@@ -915,11 +977,11 @@
                             this.saveConfiguration().then(this.getRoomFeatures.bind(this));
                         } else {
                             this.trigger('configurationNeeded');
-                            return; // We haven't yet entered the room, so bail here.
+                            return; // We haven't yet entered the groupchat, so bail here.
                         }
                     } else if (!this.get('features_fetched')) {
-                        // The features for this room weren't fetched.
-                        // That must mean it's a new room without locking
+                        // The features for this groupchat weren't fetched.
+                        // That must mean it's a new groupchat without locking
                         // (in which case Prosody doesn't send a 201 status),
                         // otherwise the features would have been fetched in
                         // the "initialize" method already.
@@ -939,23 +1001,28 @@
                      * Parameters:
                      *  (String): The text message
                      */
-                    return (new RegExp(`\\b${this.get('nick')}\\b`)).test(message);
+                    const nick = this.get('nick');
+                    if (message.get('references').length) {
+                        const mentions = message.get('references').filter(ref => (ref.type === 'mention')).map(ref => ref.value);
+                        return _.includes(mentions, nick);
+                    } else {
+                        return (new RegExp(`\\b${nick}\\b`)).test(message.get('message'));
+                    }
                 },
 
-                incrementUnreadMsgCounter (stanza) {
+                incrementUnreadMsgCounter (message) {
                     /* Given a newly received message, update the unread counter if
                      * necessary.
                      *
                      * Parameters:
                      *  (XMLElement): The <messsage> stanza
                      */
-                    const body = stanza.querySelector('body');
-                    if (_.isNull(body)) {
-                        return; // The message has no text
-                    }
-                    if (u.isNewMessage(stanza) && this.isHidden()) {
+                    if (!message) { return; }
+                    const body = message.get('message');
+                    if (_.isNil(body)) { return; }
+                    if (u.isNewMessage(message) && this.isHidden()) {
                         const settings = {'num_unread_general': this.get('num_unread_general') + 1};
-                        if (this.isUserMentioned(body.textContent)) {
+                        if (this.isUserMentioned(message)) {
                             settings.num_unread = this.get('num_unread') + 1;
                             _converse.incrementMsgCounter();
                         }
@@ -1027,25 +1094,29 @@
                 },
 
                 fetchMembers () {
-                    const old_jids = _.uniq(_.concat(
-                        _.map(this.where({'affiliation': 'admin'}), (item) => item.get('jid')),
-                        _.map(this.where({'affiliation': 'member'}), (item) => item.get('jid')),
-                        _.map(this.where({'affiliation': 'owner'}), (item) => item.get('jid'))
-                    ));
-
                     this.chatroom.getJidsWithAffiliations(['member', 'owner', 'admin'])
-                    .then((jids) => {
-                        _.each(_.difference(old_jids, jids), (removed_jid) => {
-                            // Remove absent occupants who've been removed from
-                            // the members lists.
-                            const occupant = this.findOccupant({'jid': removed_jid});
-                            if (!occupant) { return; }
+                    .then((new_members) => {
+                        const new_jids = new_members.map(m => m.jid).filter(m => !_.isUndefined(m)),
+                              new_nicks = new_members.map(m => !m.jid && m.nick || undefined).filter(m => !_.isUndefined(m)),
+                              removed_members = this.filter(m => {
+                                  return f.includes(m.get('affiliation'), ['admin', 'member', 'owner']) &&
+                                      !f.includes(m.get('nick'), new_nicks) &&
+                                        !f.includes(m.get('jid'), new_jids);
+                              });
+
+                        _.each(removed_members, (occupant) => {
+                            if (occupant.get('jid') === _converse.bare_jid) { return; }
                             if (occupant.get('show') === 'offline') {
                                 occupant.destroy();
                             }
                         });
-                        _.each(jids, (attrs) => {
-                            const occupant = this.findOccupant({'jid': attrs.jid});
+                        _.each(new_members, (attrs) => {
+                            let occupant;
+                            if (attrs.jid) {
+                                occupant = this.findOccupant({'jid': attrs.jid});
+                            } else {
+                                occupant = this.findOccupant({'nick': attrs.nick});
+                            }
                             if (occupant) {
                                 occupant.save(attrs);
                             } else {
@@ -1081,7 +1152,7 @@
 
 
             _converse.onDirectMUCInvitation = function (message) {
-                /* A direct MUC invitation to join a room has been received
+                /* A direct MUC invitation to join a groupchat has been received
                  * See XEP-0249: Direct MUC invitations.
                  *
                  * Parameters:
@@ -1103,11 +1174,11 @@
                     contact = contact? contact.get('fullname'): Strophe.getNodeFromJid(from);
                     if (!reason) {
                         result = confirm(
-                            __("%1$s has invited you to join a chat room: %2$s", contact, room_jid)
+                            __("%1$s has invited you to join a groupchat: %2$s", contact, room_jid)
                         );
                     } else {
                         result = confirm(
-                            __('%1$s has invited you to join a chat room: %2$s, and left the following reason: "%3$s"',
+                            __('%1$s has invited you to join a groupchat: %2$s, and left the following reason: "%3$s"',
                                 contact, room_jid, reason)
                         );
                     }
@@ -1125,7 +1196,7 @@
             if (_converse.allow_muc_invitations) {
                 const registerDirectInvitationHandler = function () {
                     _converse.connection.addHandler(
-                        function (message) {
+                        (message) =>  {
                             _converse.onDirectMUCInvitation(message);
                             return true;
                         }, 'jabber:x:conference', 'message');
@@ -1147,22 +1218,22 @@
             };
 
             function autoJoinRooms () {
-                /* Automatically join chat rooms, based on the
+                /* Automatically join groupchats, based on the
                  * "auto_join_rooms" configuration setting, which is an array
-                 * of strings (room JIDs) or objects (with room JID and other
+                 * of strings (groupchat JIDs) or objects (with groupchat JID and other
                  * settings).
                  */
-                _.each(_converse.auto_join_rooms, function (room) {
-                    if (_converse.chatboxes.where({'jid': room}).length) {
+                _.each(_converse.auto_join_rooms, function (groupchat) {
+                    if (_converse.chatboxes.where({'jid': groupchat}).length) {
                         return;
                     }
-                    if (_.isString(room)) {
-                        _converse.api.rooms.open(room);
-                    } else if (_.isObject(room)) {
-                        _converse.api.rooms.open(room.jid, room.nick);
+                    if (_.isString(groupchat)) {
+                        _converse.api.rooms.open(groupchat);
+                    } else if (_.isObject(groupchat)) {
+                        _converse.api.rooms.open(groupchat.jid, groupchat.nick);
                     } else {
                         _converse.log(
-                            'Invalid room criteria specified for "auto_join_rooms"',
+                            'Invalid groupchat criteria specified for "auto_join_rooms"',
                             Strophe.LogLevel.ERROR);
                     }
                 });
@@ -1170,7 +1241,7 @@
             }
 
             function disconnectChatRooms () {
-                /* When disconnecting, mark all chat rooms as
+                /* When disconnecting, mark all groupchats as
                  * disconnected, so that they will be properly entered again
                  * when fetched from session storage.
                  */
@@ -1208,7 +1279,7 @@
 
 
             /************************ BEGIN API ************************/
-            // We extend the default converse.js API to add methods specific to MUC chat rooms.
+            // We extend the default converse.js API to add methods specific to MUC groupchats.
             _.extend(_converse.api, {
                 'rooms': {
                     'close' (jids) {
@@ -1248,14 +1319,23 @@
                         }
                         return _.map(jids, _.partial(createChatRoom, _, attrs));
                     },
+
                     'open' (jids, attrs) {
-                        if (_.isUndefined(jids)) {
-                            throw new TypeError('rooms.open: You need to provide at least one JID');
-                        } else if (_.isString(jids)) {
-                            return _converse.api.rooms.create(jids, attrs).trigger('show');
-                        }
-                        return _.map(jids, (jid) => _converse.api.rooms.create(jid, attrs).trigger('show'));
+                        return new Promise((resolve, reject) => {
+                            _converse.api.waitUntil('chatBoxesFetched').then(() => {
+                                if (_.isUndefined(jids)) {
+                                    const err_msg = 'rooms.open: You need to provide at least one JID';
+                                    _converse.log(err_msg, Strophe.LogLevel.ERROR);
+                                    reject(new TypeError(err_msg));
+                                } else if (_.isString(jids)) {
+                                    resolve(_converse.api.rooms.create(jids, attrs).trigger('show'));
+                                } else {
+                                    resolve(_.map(jids, (jid) => _converse.api.rooms.create(jid, attrs).trigger('show')));
+                                }
+                            });
+                        });
                     },
+
                     'get' (jids, attrs, create) {
                         if (_.isString(attrs)) {
                             attrs = {'nick': attrs};
