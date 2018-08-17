@@ -57,8 +57,25 @@
         auto_reconnect: true,
         bosh_service_url: 'https://disroot.org:5281/http-bind', // Please use this connection manager only for testing purposes
         message_archiving: 'always',
-        view_mode: 'fullscreen'
+        view_mode: 'fullscreen',
+	auto_join_rooms: [{'jid': 'coletivos@chat.disroot.org' }],
+	auto_list_rooms: true,
+	allow_public_bookmarks: true,
+	auto_reconnect: true,
+	i18n: 'pt',
+	message_storage: 'local',
+	muc_show_join_leave: false,
+	play_sounds: true,
+	show_send_button: true,	
+	visible_toolbar_buttons: {
+	    call: true,
+	    clear: true,
+	    emoji: true,
+	    toggle_occupants: true
+	},
+//	https://conversejs.org/docs/html/configuration.html#configuration-settings
     });
+
 </script>
 </body>
 </html>
